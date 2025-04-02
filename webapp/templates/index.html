@@ -4,7 +4,19 @@
   <meta charset="UTF-8">
   <title>Minecraft Dashboard</title>
   <link rel="stylesheet" href="/static/style.css">
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      margin: 2rem;
+    }
+    canvas {
+      border: 1px solid #ccc;
+      margin-top: 1rem;
+    }
+    button {
+      margin: 0.5rem;
+    }
+  </style>
 </head>
 <body>
   <h1>Minecraft Dashboard</h1>
@@ -19,15 +31,10 @@
 
   <pre id="output"></pre>
 
-  <h2>Player Joins Over Time</h2>
-  <canvas id="joinChart" width="600" height="300"></canvas>
-
-  <h2>Event Type Frequency</h2>
-  <canvas id="eventChart" width="600" height="300"></canvas>
+  <h2>Player Movement Heatmap</h2>
+  <canvas id="heatmap" width="500" height="500"></canvas>
 
   <script>
-    let joinChart, eventChart;
-
     async function startServer() {
       const res = await fetch('/start-server', { method: 'POST' });
       const data = await res.json();
@@ -45,7 +52,7 @@
       const data = await res.json();
       const el = document.getElementById('status');
       el.textContent = data.websocket_running
-        ? `🟢 WebSocket server is running — ${data.connected_clients} clients connected`
+        ? '🟢 WebSocket server is running'
         : '🔴 WebSocket server is not running';
     }
 
@@ -68,73 +75,48 @@
       const res = await fetch(`/analyze?file=${filename}`);
       const data = await res.json();
       document.getElementById('output').textContent = JSON.stringify(data, null, 2);
-
-      renderJoinChart(data.join_timestamps);
-      renderEventChart(data.event_types);
+      renderHeatmap(data.positions);
     }
 
-    function renderJoinChart(timestamps) {
-      const labels = {};
-      timestamps.forEach(ts => {
-        const hour = new Date(ts).toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
-        labels[hour] = (labels[hour] || 0) + 1;
+    function renderHeatmap(positions) {
+      const canvas = document.getElementById("heatmap");
+      const ctx = canvas.getContext("2d");
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      if (positions.length === 0) {
+        ctx.fillText("No movement data available", 20, 20);
+        return;
+      }
+
+      const xs = positions.map(p => p[0]);
+      const zs = positions.map(p => p[1]);
+      const minX = Math.min(...xs);
+      const maxX = Math.max(...xs);
+      const minZ = Math.min(...zs);
+      const maxZ = Math.max(...zs);
+
+      const grid = {};
+      positions.forEach(([x, z]) => {
+        const key = `${x},${z}`;
+        grid[key] = (grid[key] || 0) + 1;
       });
 
-      const sorted = Object.entries(labels).sort();
-      const hours = sorted.map(([h, _]) => h);
-      const counts = sorted.map(([_, c]) => c);
+      const maxCount = Math.max(...Object.values(grid));
+      const cellSize = 4;
 
-      const ctx = document.getElementById("joinChart").getContext("2d");
-      if (joinChart) joinChart.destroy();
+      for (let key in grid) {
+        const [x, z] = key.split(",").map(Number);
+        const normX = Math.floor(((x - minX) / (maxX - minX)) * (canvas.width - cellSize));
+        const normZ = Math.floor(((z - minZ) / (maxZ - minZ)) * (canvas.height - cellSize));
+        const intensity = grid[key] / maxCount;
+        const color = `rgba(255, 0, 0, ${intensity})`;
 
-      joinChart = new Chart(ctx, {
-        type: 'line',
-        data: {
-          labels: hours,
-          datasets: [{
-            label: 'Joins per Hour',
-            data: counts,
-            fill: false,
-            tension: 0.3
-          }]
-        },
-        options: {
-          responsive: true,
-          scales: {
-            x: { title: { display: true, text: 'Hour' }},
-            y: { title: { display: true, text: 'Joins' }}
-          }
-        }
-      });
+        ctx.fillStyle = color;
+        ctx.fillRect(normX, normZ, cellSize, cellSize);
+      }
     }
 
-    function renderEventChart(eventTypes) {
-      const labels = Object.keys(eventTypes);
-      const counts = Object.values(eventTypes);
-      const ctx = document.getElementById("eventChart").getContext("2d");
-
-      if (eventChart) eventChart.destroy();
-
-      eventChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: labels,
-          datasets: [{
-            label: 'Event Counts',
-            data: counts,
-            backgroundColor: 'rgba(54, 162, 235, 0.6)',
-          }]
-        },
-        options: {
-          responsive: true,
-          scales: {
-            x: { title: { display: true, text: 'Event Type' }},
-            y: { title: { display: true, text: 'Count' }}
-          }
-        }
-      });
-    }
-
+    // Initial load
     setInterval(updateStatus, 3000);
     updateStatus();
     loadFiles();

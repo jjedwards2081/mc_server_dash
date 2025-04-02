@@ -9,39 +9,17 @@ Author: Justin Edwards
 License: MIT License
 """
 
-# MIT License
-# 
-# Copyright (c) 2023 Justine Edwards
-# 
-# Permission is hereby granted, free of charge, to any person obtaining a copy
-# of this software and associated documentation files (the "Software"), to deal
-# in the Software without restriction, including without limitation the rights
-# to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-# copies of the Software, and to permit persons to whom the Software is
-# furnished to do so, subject to the following conditions:
-# 
-# The above copyright notice and this permission notice shall be included in all
-# copies or substantial portions of the Software.
-# 
-# THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-# IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-# FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-# AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-# LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-# OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-# SOFTWARE.
-
 from flask import Flask, jsonify, request, render_template
 import subprocess
 from pathlib import Path
 import json
-from pathlib import Path
 import os
 from collections import Counter
 
 app = Flask(__name__)
 ws_process = None
 
+# Define base paths
 APP_DIR = Path(__file__).resolve().parent
 BASE_DIR = APP_DIR.parent
 DATA_DIR = BASE_DIR / "data"
@@ -90,22 +68,31 @@ def analyze():
     join_count = 0
     chat_count = 0
     join_timestamps = []
+    positions = []
 
     for e in events:
         event_name = e.get("event")
         event_types[event_name] += 1
+
         if event_name == "PlayerJoin":
             join_count += 1
             join_timestamps.append(e.get("timestamp"))
         elif event_name == "PlayerMessage":
             chat_count += 1
+        elif event_name == "PlayerTransform":
+            player = e.get("body", {}).get("player", {})
+            pos = player.get("position", {})
+            x = round(pos.get("x", 0))
+            z = round(pos.get("z", 0))
+            positions.append((x, z))
 
     return jsonify({
         "joins": join_count,
         "messages": chat_count,
         "total_events": len(events),
         "join_timestamps": join_timestamps,
-        "event_types": dict(event_types)  # 💥 this is what the chart uses
+        "event_types": dict(event_types),
+        "positions": positions  # 👈 for the heatmap
     })
 
 @app.route("/status")
@@ -114,5 +101,5 @@ def status():
     return jsonify({
         "websocket_running": is_running
     })
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5050)
+
+if __name__ == "__
