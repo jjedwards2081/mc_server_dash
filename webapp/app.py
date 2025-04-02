@@ -1,10 +1,15 @@
-from flask import Flask, jsonify, request, render_template
+from flask import Flask, jsonify, request, render_template, send_file
 import subprocess
 from pathlib import Path
 import json
 import os
 from collections import Counter
 from collections import defaultdict
+import matplotlib
+matplotlib.use('Agg')  # Prevent macOS issues with Matplotlib
+import matplotlib.pyplot as plt
+import io
+import numpy as np
 
 app = Flask(__name__)
 ws_process = None
@@ -85,6 +90,55 @@ def analyze():
         "event_types": dict(event_types),
         "positions": dict(positions)
     })
+
+@app.route("/generate-heatmap")
+def generate_heatmap():
+    filename = request.args.get("file")
+    if not filename:
+        return jsonify({"error": "No file provided"}), 400
+
+    path = DATA_DIR / filename
+    if not path.exists():
+        return jsonify({"error": "File not found"}), 404
+
+    with path.open() as f:
+        events = json.load(f)
+
+    positions = []
+    for e in events:
+        if e.get("event") == "PlayerTransform":
+            player = e.get("body", {}).get("player", {})
+            pos = player.get("position", {})
+            x = round(pos.get("x", 0))
+            z = round(pos.get("z", 0))
+            positions.append((x, z))
+
+    if not positions:
+        return jsonify({"error": "No movement data"}), 400
+
+    xs, zs = zip(*positions)
+    heatmap, xedges, yedges = np.histogram2d(xs, zs, bins=100)
+    extent = [xedges[0], xedges[-1], yedges[0], yedges[-1]]
+
+    fig, ax = plt.subplots()
+    cax = ax.imshow(
+        heatmap.T,
+        extent=extent,
+        origin='lower',
+        cmap='hot',
+        interpolation='nearest'
+    )
+    ax.set_title('Player Movement Heatmap')
+    ax.set_xlabel('X')
+    ax.set_ylabel('Z')
+    fig.colorbar(cax, ax=ax, label='Movement Density')
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png')
+    plt.close(fig)
+    buf.seek(0)
+
+    return send_file(buf, mimetype='image/png')
 
 @app.route("/status")
 def status():
