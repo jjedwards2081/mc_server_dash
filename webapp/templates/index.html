@@ -81,7 +81,8 @@
       if (!filename) return alert("Please select a file");
       const res = await fetch(`/analyze?file=${filename}`);
       const data = await res.json();
-      renderHeatmap(data.positions);
+      const allPositions = Object.values(data.positions).flat();
+      renderHeatmap(allPositions);
     }
 
     function renderHeatmap(positions) {
