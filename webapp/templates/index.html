@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Minecraft Dashboard</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+  <h1>Minecraft Dashboard</h1>
+  <h3 id="status">Checking server status...</h3>
+
+  <button onclick="startServer()">Start WebSocket Server</button>
+  <button onclick="stopServer()">Stop WebSocket Server</button>
+
+  <h2>Analyze Event Log</h2>
+  <select id="fileSelect"></select>
+  <button onclick="analyze()">Analyze</button>
+
+  <pre id="output"></pre>
+
+  <h2>Player Joins Over Time</h2>
+  <canvas id="joinChart" width="600" height="300"></canvas>
+
+  <h2>Event Type Frequency</h2>
+  <canvas id="eventChart" width="600" height="300"></canvas>
+
+  <script>
+    let joinChart, eventChart;
+
+    async function startServer() {
+      const res = await fetch('/start-server', { method: 'POST' });
+      const data = await res.json();
+      alert(data.status);
+    }
+
+    async function stopServer() {
+      const res = await fetch('/stop-server', { method: 'POST' });
+      const data = await res.json();
+      alert(data.status);
+    }
+
+    async function updateStatus() {
+      const res = await fetch('/status');
+      const data = await res.json();
+      const el = document.getElementById('status');
+      el.textContent = data.websocket_running
+        ? `🟢 WebSocket server is running — ${data.connected_clients} clients connected`
+        : '🔴 WebSocket server is not running';
+    }
+
+    async function loadFiles() {
+      const res = await fetch('/list-files');
+      const data = await res.json();
+      const select = document.getElementById('fileSelect');
+      select.innerHTML = '';
+      data.files.forEach(file => {
+        const option = document.createElement('option');
+        option.value = file;
+        option.textContent = file;
+        select.appendChild(option);
+      });
+    }
+
+    async function analyze() {
+      const filename = document.getElementById('fileSelect').value;
+      if (!filename) return alert("Please select a file");
+      const res = await fetch(`/analyze?file=${filename}`);
+      const data = await res.json();
+      document.getElementById('output').textContent = JSON.stringify(data, null, 2);
+
+      renderJoinChart(data.join_timestamps);
+      renderEventChart(data.event_types);
+    }
+
+    function renderJoinChart(timestamps) {
+      const labels = {};
+      timestamps.forEach(ts => {
+        const hour = new Date(ts).toISOString().slice(0, 13); // "YYYY-MM-DDTHH"
+        labels[hour] = (labels[hour] || 0) + 1;
+      });
+
+      const sorted = Object.entries(labels).sort();
+      const hours = sorted.map(([h, _]) => h);
+      const counts = sorted.map(([_, c]) => c);
+
+      const ctx = document.getElementById("joinChart").getContext("2d");
+      if (joinChart) joinChart.destroy();
+
+      joinChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: hours,
+          datasets: [{
+            label: 'Joins per Hour',
+            data: counts,
+            fill: false,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: { title: { display: true, text: 'Hour' }},
+            y: { title: { display: true, text: 'Joins' }}
+          }
+        }
+      });
+    }
+
+    function renderEventChart(eventTypes) {
+      const labels = Object.keys(eventTypes);
+      const counts = Object.values(eventTypes);
+      const ctx = document.getElementById("eventChart").getContext("2d");
+
+      if (eventChart) eventChart.destroy();
+
+      eventChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Event Counts',
+            data: counts,
+            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: {
+            x: { title: { display: true, text: 'Event Type' }},
+            y: { title: { display: true, text: 'Count' }}
+          }
+        }
+      });
+    }
+
+    setInterval(updateStatus, 3000);
+    updateStatus();
+    loadFiles();
+  </script>
+</body>
+</html>
