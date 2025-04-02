@@ -1,14 +1,3 @@
-"""
-app.py
-
-This script is a Flask-based web application that provides a dashboard for managing a Minecraft server.
-It includes endpoints for starting/stopping a WebSocket server, listing event files, analyzing event data,
-and checking the server's status. The application also serves an HTML interface for user interaction.
-
-Author: Justin Edwards
-License: MIT License
-"""
-
 from flask import Flask, jsonify, request, render_template
 import subprocess
 from pathlib import Path
@@ -19,7 +8,7 @@ from collections import Counter
 app = Flask(__name__)
 ws_process = None
 
-# Define base paths
+# Determine the base directory relative to this file
 APP_DIR = Path(__file__).resolve().parent
 BASE_DIR = APP_DIR.parent
 DATA_DIR = BASE_DIR / "data"
@@ -68,7 +57,7 @@ def analyze():
     join_count = 0
     chat_count = 0
     join_timestamps = []
-    positions = []
+    positions = []  # To hold (x, z) tuples from PlayerTransform events
 
     for e in events:
         event_name = e.get("event")
@@ -82,6 +71,7 @@ def analyze():
         elif event_name == "PlayerTransform":
             player = e.get("body", {}).get("player", {})
             pos = player.get("position", {})
+            # Round positions to simplify the heatmap data
             x = round(pos.get("x", 0))
             z = round(pos.get("z", 0))
             positions.append((x, z))
@@ -92,14 +82,13 @@ def analyze():
         "total_events": len(events),
         "join_timestamps": join_timestamps,
         "event_types": dict(event_types),
-        "positions": positions  # 👈 for the heatmap
+        "positions": positions
     })
 
 @app.route("/status")
 def status():
     is_running = ws_process is not None and ws_process.poll() is None
-    return jsonify({
-        "websocket_running": is_running
-    })
+    return jsonify({"websocket_running": is_running})
 
-if __name__ == "__
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5050)
