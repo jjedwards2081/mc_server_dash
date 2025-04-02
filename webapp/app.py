@@ -110,8 +110,9 @@ def analyze():
 
 @app.route("/status")
 def status():
-    count = len(ws_process._children) if ws_process else 0
-    return jsonify({"websocket_running": ws_process is not None, "connected_clients": count})
-
+    is_running = ws_process is not None and ws_process.poll() is None
+    return jsonify({
+        "websocket_running": is_running
+    })
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5050)
