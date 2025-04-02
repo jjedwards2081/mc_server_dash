@@ -29,12 +29,19 @@
   <select id="fileSelect"></select>
   <button onclick="analyze()">Analyze</button>
 
-  <pre id="output"></pre>
-
   <h2>Player Movement Heatmap</h2>
   <canvas id="heatmap" width="500" height="500"></canvas>
 
   <script>
+
+    // Maps a 0-1 intensity value to a blue → red gradient
+    function getHeatColor(intensity) {
+      const r = Math.floor(255 * intensity);
+      const g = Math.floor(255 * (1 - intensity) * 0.4);  // slight green for orange transition
+      const b = Math.floor(255 * (1 - intensity));
+      return `rgb(${r}, ${g}, ${b})`;
+    }
+
     async function startServer() {
       const res = await fetch('/start-server', { method: 'POST' });
       const data = await res.json();
@@ -74,7 +81,6 @@
       if (!filename) return alert("Please select a file");
       const res = await fetch(`/analyze?file=${filename}`);
       const data = await res.json();
-      document.getElementById('output').textContent = JSON.stringify(data, null, 2);
       renderHeatmap(data.positions);
     }
 
@@ -102,18 +108,59 @@
       });
 
       const maxCount = Math.max(...Object.values(grid));
-      const cellSize = 4;
+      const cellSize = 5;
+      const padding = 40; // space for axis labels
 
+      const plotWidth = canvas.width - padding;
+      const plotHeight = canvas.height - padding;
+
+      // Draw heatmap cells
       for (let key in grid) {
         const [x, z] = key.split(",").map(Number);
-        const normX = Math.floor(((x - minX) / (maxX - minX)) * (canvas.width - cellSize));
-        const normZ = Math.floor(((z - minZ) / (maxZ - minZ)) * (canvas.height - cellSize));
+        const normX = ((x - minX) / (maxX - minX)) * plotWidth;
+        const normZ = ((z - minZ) / (maxZ - minZ)) * plotHeight;
+
         const intensity = grid[key] / maxCount;
-        const color = `rgba(255, 0, 0, ${intensity})`;
+        const color = getHeatColor(intensity);
 
         ctx.fillStyle = color;
-        ctx.fillRect(normX, normZ, cellSize, cellSize);
+        ctx.fillRect(padding + normX, plotHeight - normZ, cellSize, cellSize);
       }
+
+      // Draw axis
+      ctx.strokeStyle = "#000";
+      ctx.beginPath();
+      ctx.moveTo(padding, 0);
+      ctx.lineTo(padding, canvas.height - padding);
+      ctx.lineTo(canvas.width, canvas.height - padding);
+      ctx.stroke();
+
+      // Axis labels
+      ctx.fillStyle = "#000";
+      ctx.font = "10px sans-serif";
+      ctx.textAlign = "center";
+
+      const steps = 5;
+      for (let i = 0; i <= steps; i++) {
+        const xVal = Math.round(minX + (i / steps) * (maxX - minX));
+        const zVal = Math.round(minZ + (i / steps) * (maxZ - minZ));
+
+        const xPos = padding + (i / steps) * plotWidth;
+        const zPos = plotHeight - (i / steps) * plotHeight;
+
+        // X axis ticks
+        ctx.fillText(xVal, xPos, canvas.height - 5);
+
+        // Z axis ticks
+        ctx.fillText(zVal, padding - 20, zPos + 3);
+      }
+
+      // Axis titles
+      ctx.save();
+      ctx.fillText("X", canvas.width - 10, canvas.height - 10);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillText("Z", -canvas.height / 2, 10);
+      ctx.restore();
     }
 
     // Initial load

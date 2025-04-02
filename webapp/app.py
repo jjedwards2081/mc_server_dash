@@ -4,6 +4,7 @@ from pathlib import Path
 import json
 import os
 from collections import Counter
+from collections import defaultdict
 
 app = Flask(__name__)
 ws_process = None
@@ -57,7 +58,7 @@ def analyze():
     join_count = 0
     chat_count = 0
     join_timestamps = []
-    positions = []  # To hold (x, z) tuples from PlayerTransform events
+    positions = defaultdict(list)
 
     for e in events:
         event_name = e.get("event")
@@ -70,11 +71,11 @@ def analyze():
             chat_count += 1
         elif event_name == "PlayerTransform":
             player = e.get("body", {}).get("player", {})
+            name = player.get("name", "Unknown")
             pos = player.get("position", {})
-            # Round positions to simplify the heatmap data
             x = round(pos.get("x", 0))
             z = round(pos.get("z", 0))
-            positions.append((x, z))
+            positions[name].append((x, z))
 
     return jsonify({
         "joins": join_count,
@@ -82,7 +83,7 @@ def analyze():
         "total_events": len(events),
         "join_timestamps": join_timestamps,
         "event_types": dict(event_types),
-        "positions": positions
+        "positions": dict(positions)
     })
 
 @app.route("/status")
