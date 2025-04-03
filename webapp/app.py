@@ -151,7 +151,7 @@ def connection_info():
     try:
         # Fetch the public IP address
         public_ip = requests.get("https://api.ipify.org").text
-        port = 5050  # The port your Flask app is running on
+        port = 19131  # The port your Flask app is running on
         connection_string = f"/connect {public_ip}:{port}"
         return jsonify({"connection_string": connection_string})
     except Exception as e:
