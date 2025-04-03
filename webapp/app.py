@@ -10,6 +10,7 @@ matplotlib.use('Agg')  # Prevent macOS issues with Matplotlib
 import matplotlib.pyplot as plt
 import io
 import numpy as np
+import requests  # Add this import to fetch the public IP address
 
 app = Flask(__name__)
 ws_process = None
@@ -144,6 +145,17 @@ def generate_heatmap():
 def status():
     is_running = ws_process is not None and ws_process.poll() is None
     return jsonify({"websocket_running": is_running})
+
+@app.route("/connection-info", methods=["GET"])
+def connection_info():
+    try:
+        # Fetch the public IP address
+        public_ip = requests.get("https://api.ipify.org").text
+        port = 5050  # The port your Flask app is running on
+        connection_string = f"/connect {public_ip}:{port}"
+        return jsonify({"connection_string": connection_string})
+    except Exception as e:
+        return jsonify({"error": "Unable to fetch connection info", "details": str(e)}), 500
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5050)

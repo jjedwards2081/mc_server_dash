@@ -4,17 +4,51 @@
   <meta charset="UTF-8">
   <title>Minecraft Dashboard</title>
   <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/fonts.css">
   <style>
     body {
       font-family: Arial, sans-serif;
-      margin: 2rem;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
     }
-    canvas {
-      border: 1px solid #ccc;
-      margin-top: 1rem;
+    header {
+      background-color: #333;
+      color: white;
+      padding: 1rem;
+      display: flex;
+      align-items: center;
     }
-    button {
-      margin: 0.5rem;
+    header img {
+      height: 50px;
+      margin-right: 1rem;
+    }
+    .container {
+      display: flex;
+      flex: 1;
+    }
+    .sidebar {
+      width: 200px;
+      background-color: #f4f4f4;
+      padding: 1rem;
+      box-shadow: 2px 0 5px rgba(0, 0, 0, 0.1);
+    }
+    .sidebar h2 {
+      margin-top: 0;
+    }
+    .sidebar a {
+      display: block;
+      margin: 0.5rem 0;
+      text-decoration: none;
+      color: #333;
+    }
+    .sidebar a:hover {
+      text-decoration: underline;
+    }
+    .main-content {
+      flex: 1;
+      padding: 2rem;
     }
     #heatmap-container {
       margin-top: 1rem;
@@ -26,20 +60,37 @@
   </style>
 </head>
 <body>
-  <h1>Minecraft Dashboard</h1>
-  <h3 id="status">Checking server status...</h3>
+  <header>
+    <img src="/static/logo.png" alt="Logo">
+    <h1>Minecraft Dashboard</h1>
+  </header>
+  <div class="container">
+    <nav class="sidebar">
+      <h2>Navigation</h2>
+      <a href="#">Home</a>
+      <a href="#">Analyze</a>
+      <a href="#">Heatmap</a>
+      <a href="#">Settings</a>
+    </nav>
+    <main class="main-content">
+      <h3 id="status">Checking server status...</h3>
 
-  <button onclick="startServer()">Start WebSocket Server</button>
-  <button onclick="stopServer()">Stop WebSocket Server</button>
+      <button onclick="startServer()">Start WebSocket Server</button>
+      <button onclick="stopServer()">Stop WebSocket Server</button>
 
-  <h2>Analyze Event Log</h2>
-  <select id="fileSelect"></select>
-  <button onclick="analyze()">Analyze</button>
+      <h2>Server Connection Info</h2>
+      <p id="connection-info">Fetching connection info...</p>
 
-  <h2>Player Movement Heatmap</h2>
-  <div id="heatmap-container">
-    <p id="loading-text">Preparing heatmap...</p>
-    <img id="heatmap-img" style="display:none;" width="500">
+      <h2>Analyze Event Log</h2>
+      <select id="fileSelect"></select>
+      <button onclick="analyze()">Analyze</button>
+
+      <h2>Player Movement Heatmap</h2>
+      <div id="heatmap-container">
+        <p id="loading-text">Preparing heatmap...</p>
+        <img id="heatmap-img" style="display:none;" width="500">
+      </div>
+    </main>
   </div>
 
   <script>
@@ -99,10 +150,22 @@
       };
     }
 
+    async function fetchConnectionInfo() {
+      const res = await fetch('/connection-info');
+      const data = await res.json();
+      const el = document.getElementById('connection-info');
+      if (data.connection_string) {
+        el.textContent = `Minecraft Education Connection String: ${data.connection_string}`;
+      } else {
+        el.textContent = "Unable to fetch connection info.";
+      }
+    }
+
     // Initial load
     setInterval(updateStatus, 3000);
     updateStatus();
     loadFiles();
+    fetchConnectionInfo(); // Fetch connection info on page load
   </script>
 </body>
 </html>
