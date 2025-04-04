@@ -120,7 +120,7 @@ def analyze_lang_file():
     if not path.exists():
         return jsonify({"error": "File not found"}), 404
 
-    # Walk up to find the original .mcworld filename
+    # Walk up from lang file path to find original .mcworld filename
     current_dir = path.parent
     world_filename = "(unknown)"
     while current_dir != LANGUAGE_TOOL_DIR:
@@ -131,13 +131,15 @@ def analyze_lang_file():
             break
         current_dir = current_dir.parent
 
-    # Read the lang file
+    # Read all lines from the lang file
     with open(path, "r", encoding="utf-8") as f:
         lines = f.readlines()
 
+    # Extract useful lines
     texts = [line.strip().split("=", 1)[1] for line in lines if "=" in line and not is_just_formatting(line)]
     joined_text = "\n".join(texts)
 
+    # Compute readability metrics
     difficult_words_list = textstat.difficult_words_list(joined_text)
     difficult_word_counts = {word: difficult_words_list.count(word) for word in set(difficult_words_list)}
 
@@ -152,7 +154,7 @@ def analyze_lang_file():
         "Difficult Words": difficult_word_counts
     }
 
-    # ── Save .txt report ───────────────────────────────
+    # ── Save main summary .txt report ─────────────────────────────
     analysis_file = path.parent / f"analysis_{Path(rel_path).stem}.txt"
     with open(analysis_file, "w", encoding="utf-8") as f:
         f.write(f"World File: {world_filename}\n")
@@ -167,7 +169,7 @@ def analyze_lang_file():
             else:
                 f.write(f"{key}: {value}\n")
 
-    # ── Save per-line reading age .json ────────────────
+    # ── Save per-line reading age .json ──────────────────────────
     line_analysis = []
     for i, line in enumerate(lines, 1):
         if "=" in line and not is_just_formatting(line):
@@ -183,33 +185,46 @@ def analyze_lang_file():
                 "reading_age": reading_age
             })
 
-    json_filename = f"line_analysis_{Path(rel_path).stem}.json"
-    json_path = path.parent / json_filename
+    json_path = path.parent / f"line_analysis_{Path(rel_path).stem}.json"
     with open(json_path, "w", encoding="utf-8") as jf:
         json.dump(line_analysis, jf, indent=2)
 
-    # ── Generate histogram of reading ages ────────────────
-    reading_ages = [entry["reading_age"] for entry in line_analysis if isinstance(entry["reading_age"], (int, float))]
+    # ── Generate histogram chart (only reading_age > 0) ──────────
+    filtered_reading_ages = [
+        entry["reading_age"] for entry in line_analysis
+        if isinstance(entry["reading_age"], (int, float)) and entry["reading_age"] > 0
+    ]
 
-    if reading_ages:
+    chart_path = path.parent / f"reading_age_distribution_{Path(rel_path).stem}.png"
+    if filtered_reading_ages:
         plt.figure(figsize=(10, 6))
-        plt.hist(reading_ages, bins=30, color='orange', edgecolor='black')
+        plt.hist(filtered_reading_ages, bins=30, color='orange', edgecolor='black')
         plt.title("Distribution of Reading Age")
         plt.xlabel("Reading Age")
         plt.ylabel("Frequency")
-        chart_path = path.parent / f"reading_age_distribution_{Path(rel_path).stem}.png"
         plt.savefig(chart_path)
         plt.close()
 
-    # ── Return both download links ─────────────────────
-    relative_txt_url = str(analysis_file.relative_to(LANGUAGE_TOOL_DIR))
-    relative_json_url = str(json_path.relative_to(LANGUAGE_TOOL_DIR))
-    relative_chart_url = str(chart_path.relative_to(LANGUAGE_TOOL_DIR))
-    
+    # ── Save lines with reading_age > 16 ─────────────────────────
+    high_reading_lines = [
+        f"Line {entry['line']}: {entry['text']} (Reading Age: {entry['reading_age']})"
+        for entry in line_analysis
+        if isinstance(entry["reading_age"], (int, float)) and entry["reading_age"] > 16
+    ]
+
+    high_reading_path = path.parent / f"above_reading_age_16_{Path(rel_path).stem}.txt"
+    with open(high_reading_path, "w", encoding="utf-8") as f:
+        f.write("Lines with Reading Age > 16\n")
+        f.write("=" * 40 + "\n\n")
+        for line in high_reading_lines:
+            f.write(line + "\n")
+
+    # ── Return file URLs for frontend download ───────────────────
     return jsonify({
-        "file_url": f"/download-analysis/{relative_txt_url}",
-        "json_url": f"/download-analysis/{relative_json_url}",
-        "chart_url": f"/download-analysis/{relative_chart_url}"
+        "file_url": f"/download-analysis/{analysis_file.relative_to(LANGUAGE_TOOL_DIR)}",
+        "json_url": f"/download-analysis/{json_path.relative_to(LANGUAGE_TOOL_DIR)}",
+        "chart_url": f"/download-analysis/{chart_path.relative_to(LANGUAGE_TOOL_DIR)}",
+        "high_reading_url": f"/download-analysis/{high_reading_path.relative_to(LANGUAGE_TOOL_DIR)}"
     })
 
 @app.route('/download-analysis/<path:filename>')

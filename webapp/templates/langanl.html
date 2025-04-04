@@ -19,14 +19,20 @@
 <script>
   async function uploadWorld() {
     const fileInput = document.getElementById("mcworldFile");
-    if (fileInput.files.length === 0) return alert("Select a .mcworld file");
+    if (fileInput.files.length === 0) {
+      alert("Select a .mcworld file");
+      return;
+    }
 
     const formData = new FormData();
     formData.append("file", fileInput.files[0]);
 
     const res = await fetch("/upload-mcworld", { method: "POST", body: formData });
     const data = await res.json();
-    if (data.error) return alert(data.error);
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
 
     const select = document.getElementById("langSelect");
     select.innerHTML = "";
@@ -42,7 +48,10 @@
 
   async function runLangAnalysis() {
     const filename = document.getElementById("langSelect").value;
-    if (!filename) return alert("Select a .lang file");
+    if (!filename) {
+      alert("Select a .lang file");
+      return;
+    }
 
     const res = await fetch("/analyze-lang-file", {
       method: "POST",
@@ -51,15 +60,20 @@
     });
 
     const data = await res.json();
-    if (data.error) return alert(data.error);
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
 
     const out = document.getElementById("analysisOutput");
     out.innerHTML = `
       <a href="${data.file_url}" download>📄 Download summary report (.txt)</a><br>
       <a href="${data.json_url}" download>📄 Download per-line analysis (.json)</a><br>
-      <a href="${data.chart_url}" download>📊 Download reading age chart (.png)</a><br><br>
+      <a href="${data.chart_url}" download>📊 Download reading age chart (.png)</a><br>
+      <a href="${data.high_reading_url}" download>⚠️ Download lines above reading age 16 (.txt)</a><br><br>
       <img src="${data.chart_url}" alt="Reading Age Distribution" style="max-width: 100%; border: 1px solid #ccc; padding: 5px;">
-`   ;
+    `;
+    out.style.display = "block";
   }
 </script>
 
