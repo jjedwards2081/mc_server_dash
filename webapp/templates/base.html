@@ -2,18 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>{% block title %}Minecraft Dashboard{% endblock %}</title>
+  <title>{% block title %}Minecraft Internal Tools{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="stylesheet" href="{{ url_for('static', filename='fonts.css') }}">
 </head>
 <body>
   <header>
     <img src="{{ url_for('static', filename='logo.png') }}" alt="Logo">
-    <h1>Minecraft Dashboard</h1>
+    <h1>Minecraft Internal Tools</h1>
   </header>
   <div class="container">
     <nav class="sidebar">
-        <h2>Navigation</h2>
+        <h2>Menu</h2>
         <a href="{{ url_for('home') }}">Home</a>
         <a href="{{ url_for('webserver') }}">WebSocket Server</a>
         <a href="{{ url_for('langanl') }}">Language Analysis</a> <!-- New link -->
