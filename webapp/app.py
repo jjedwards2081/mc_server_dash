@@ -19,6 +19,7 @@ subprocess.Popen([sys.executable, server_path])
 
 app = Flask(__name__)
 ws_process = None
+websocket_process = None
 
 # Determine the base directory relative to this file
 APP_DIR = Path(__file__).resolve().parent
@@ -45,27 +46,26 @@ def download_file(filename):
     logs_dir = os.path.expanduser("~/data")  # Or wherever your event logs are
     return send_from_directory(logs_dir, filename, as_attachment=True)
 
-@app.route("/start-server", methods=["POST"])
+
+@app.route('/start-server', methods=['POST'])
 def start_server():
+    global websocket_process
     try:
-        # Build the absolute path to server.py
         server_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'websocket_server', 'server.py'))
-
-        # Use sys.executable to run with the current Python environment
-        subprocess.Popen([sys.executable, server_path])
-
+        websocket_process = subprocess.Popen([sys.executable, server_path])
         return jsonify({'status': 'WebSocket server started.'})
     except Exception as e:
         return jsonify({'status': f'Failed to start server: {e}'})
 
-@app.route("/stop-server", methods=["POST"])
+@app.route('/stop-server', methods=['POST'])
 def stop_server():
-    global ws_process
-    if ws_process:
-        ws_process.terminate()
-        ws_process = None
-        return jsonify({"status": "stopped"})
-    return jsonify({"status": "not running"})
+    global websocket_process
+    if websocket_process is not None:
+        websocket_process.terminate()
+        websocket_process.wait()
+        websocket_process = None  # ✅ Clear the reference
+        return jsonify({'status': 'WebSocket server stopped.'})
+    return jsonify({'status': 'Server was not running.'})
 
 @app.route("/list-files", methods=["GET"])
 def list_files():
@@ -166,10 +166,11 @@ def generate_heatmap():
 
     return send_file(buf, mimetype='image/png')
 
-@app.route("/status")
+@app.route('/status')
 def status():
-    is_running = ws_process is not None and ws_process.poll() is None
-    return jsonify({"websocket_running": is_running})
+    global websocket_process
+    running = websocket_process is not None and websocket_process.poll() is None
+    return jsonify({'websocket_running': running})
 
 @app.route("/connection-info", methods=["GET"])
 def connection_info():
