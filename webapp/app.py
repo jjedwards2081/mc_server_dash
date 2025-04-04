@@ -1,33 +1,29 @@
-from flask import Flask, jsonify, request, render_template, send_file, send_from_directory
+from flask import Flask, jsonify, request, render_template, send_file, send_from_directory, abort
 import subprocess
 from pathlib import Path
 import json
 import os
-from collections import Counter
-from collections import defaultdict
+from collections import Counter, defaultdict
 import matplotlib
-matplotlib.use('Agg')  # Prevent macOS issues with Matplotlib
+matplotlib.use('Agg')  # For macOS
 import matplotlib.pyplot as plt
 import io
 import numpy as np
-import requests  # Add this import to fetch the public IP address
+import requests
 import sys
 
-# Start the WebSocket server
-server_path = os.path.abspath("../websocket_server/server.py")  # Adjust the path as needed
-subprocess.Popen([sys.executable, server_path])
-
 app = Flask(__name__)
-ws_process = None
+
+# Globals for process tracking
 websocket_process = None
 
-# Determine the base directory relative to this file
+# Directories
 APP_DIR = Path(__file__).resolve().parent
 BASE_DIR = APP_DIR.parent
 DATA_DIR = BASE_DIR / "data"
 SERVER_PATH = BASE_DIR / "websocket_server" / "server.py"
 
-app = Flask(__name__)
+# ────────────────────────────── ROUTES ────────────────────────────── #
 
 @app.route('/')
 def home():
@@ -41,18 +37,11 @@ def webserver():
 def langanl():
     return render_template('langanl.html')
 
-@app.route('/download/<filename>')
-def download_file(filename):
-    logs_dir = os.path.expanduser("~/data")  # Or wherever your event logs are
-    return send_from_directory(logs_dir, filename, as_attachment=True)
-
-
 @app.route('/start-server', methods=['POST'])
 def start_server():
     global websocket_process
     try:
-        server_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'websocket_server', 'server.py'))
-        websocket_process = subprocess.Popen([sys.executable, server_path])
+        websocket_process = subprocess.Popen([sys.executable, str(SERVER_PATH)])
         return jsonify({'status': 'WebSocket server started.'})
     except Exception as e:
         return jsonify({'status': f'Failed to start server: {e}'})
@@ -63,14 +52,29 @@ def stop_server():
     if websocket_process is not None:
         websocket_process.terminate()
         websocket_process.wait()
-        websocket_process = None  # ✅ Clear the reference
+        websocket_process = None
         return jsonify({'status': 'WebSocket server stopped.'})
     return jsonify({'status': 'Server was not running.'})
+
+@app.route('/status')
+def status():
+    global websocket_process
+    running = websocket_process is not None and websocket_process.poll() is None
+    return jsonify({'websocket_running': running})
 
 @app.route("/list-files", methods=["GET"])
 def list_files():
     files = [f.name for f in DATA_DIR.glob("events_*.json")]
     return jsonify({"files": files})
+
+@app.route("/download/<path:filename>")
+def download_file(filename):
+    file_path = DATA_DIR / filename
+    print(f"Looking for: {file_path}")
+    if not file_path.exists():
+        print("File not found!")
+        return abort(404)
+    return send_from_directory(DATA_DIR, filename, as_attachment=True)
 
 @app.route("/analyze", methods=["GET"])
 def analyze():
@@ -166,22 +170,17 @@ def generate_heatmap():
 
     return send_file(buf, mimetype='image/png')
 
-@app.route('/status')
-def status():
-    global websocket_process
-    running = websocket_process is not None and websocket_process.poll() is None
-    return jsonify({'websocket_running': running})
-
 @app.route("/connection-info", methods=["GET"])
 def connection_info():
     try:
-        # Fetch the public IP address
         public_ip = requests.get("https://api.ipify.org").text
-        port = 19131  # The port your Flask app is running on
+        port = 19131
         connection_string = f"/connect {public_ip}:{port}"
         return jsonify({"connection_string": connection_string})
     except Exception as e:
         return jsonify({"error": "Unable to fetch connection info", "details": str(e)}), 500
+
+# ────────────────────────────── RUN ────────────────────────────── #
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5050)
