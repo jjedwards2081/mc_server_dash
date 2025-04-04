@@ -9,7 +9,7 @@ body {
 header {
   display: flex;
   align-items: center;
-  background-color: #5e7c16;
+  background-color: #5e7c16; /* Minecraft green */
   color: white;
   padding: 1rem;
 }

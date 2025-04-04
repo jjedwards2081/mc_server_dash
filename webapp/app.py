@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request, render_template, send_file
+from flask import Flask, jsonify, request, render_template, send_file, send_from_directory
 import subprocess
 from pathlib import Path
 import json
@@ -21,9 +21,24 @@ BASE_DIR = APP_DIR.parent
 DATA_DIR = BASE_DIR / "data"
 SERVER_PATH = BASE_DIR / "websocket_server" / "server.py"
 
-@app.route("/")
-def index():
-    return render_template("index.html")
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return render_template('home.html')
+
+@app.route('/webserver')
+def webserver():
+    return render_template('webserver.html')
+
+@app.route('/langanl')
+def langanl():
+    return render_template('langanl.html')
+
+@app.route('/download/<filename>')
+def download_file(filename):
+    logs_dir = os.path.expanduser("~/data")  # Or wherever your event logs are
+    return send_from_directory(logs_dir, filename, as_attachment=True)
 
 @app.route("/start-server", methods=["POST"])
 def start_server():
