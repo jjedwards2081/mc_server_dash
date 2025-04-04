@@ -11,6 +11,11 @@ import matplotlib.pyplot as plt
 import io
 import numpy as np
 import requests  # Add this import to fetch the public IP address
+import sys
+
+# Start the WebSocket server
+server_path = os.path.abspath("../websocket_server/server.py")  # Adjust the path as needed
+subprocess.Popen([sys.executable, server_path])
 
 app = Flask(__name__)
 ws_process = None
@@ -42,11 +47,16 @@ def download_file(filename):
 
 @app.route("/start-server", methods=["POST"])
 def start_server():
-    global ws_process
-    if ws_process is None:
-        ws_process = subprocess.Popen(["python3", str(SERVER_PATH)])
-        return jsonify({"status": "started"})
-    return jsonify({"status": "already running"})
+    try:
+        # Build the absolute path to server.py
+        server_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'websocket_server', 'server.py'))
+
+        # Use sys.executable to run with the current Python environment
+        subprocess.Popen([sys.executable, server_path])
+
+        return jsonify({'status': 'WebSocket server started.'})
+    except Exception as e:
+        return jsonify({'status': f'Failed to start server: {e}'})
 
 @app.route("/stop-server", methods=["POST"])
 def stop_server():
