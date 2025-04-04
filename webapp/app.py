@@ -11,6 +11,15 @@ import io
 import numpy as np
 import requests
 import sys
+from werkzeug.utils import secure_filename
+import textstat
+import re
+import zipfile
+import tempfile
+from datetime import datetime
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.use('Agg')  # Ensure headless rendering
 
 app = Flask(__name__)
 
@@ -22,6 +31,14 @@ APP_DIR = Path(__file__).resolve().parent
 BASE_DIR = APP_DIR.parent
 DATA_DIR = BASE_DIR / "data"
 SERVER_PATH = BASE_DIR / "websocket_server" / "server.py"
+LANGUAGE_TOOL_DIR = DATA_DIR / "languagetooldata"
+LANGUAGE_TOOL_DIR.mkdir(exist_ok=True)
+
+PLACEHOLDER_PATTERN = r"(%\d*\$?[sd]|\\n|\u00a7.)"
+
+def is_just_formatting(value):
+    cleaned = re.sub(PLACEHOLDER_PATTERN, "", value)
+    return not cleaned.strip()
 
 # ────────────────────────────── ROUTES ────────────────────────────── #
 
@@ -36,6 +53,171 @@ def webserver():
 @app.route('/langanl')
 def langanl():
     return render_template('langanl.html')
+
+@app.route('/upload-lang-file', methods=['POST'])
+def upload_lang_file():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file part'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+
+    filename = secure_filename(file.filename)
+    save_path = LANGUAGE_TOOL_DIR / filename
+    file.save(save_path)
+    return jsonify({'status': f'File {filename} uploaded.'})
+
+@app.route('/upload-mcworld', methods=['POST'])
+def upload_mcworld():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'Empty filename'}), 400
+
+    filename = secure_filename(file.filename)
+    world_name = Path(filename).stem
+    world_dir = LANGUAGE_TOOL_DIR / world_name
+    world_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save the uploaded file temporarily
+    temp_path = LANGUAGE_TOOL_DIR / filename
+    file.save(temp_path)
+
+    try:
+        # Unzip the .mcworld into the world-specific folder
+        with zipfile.ZipFile(temp_path, 'r') as zip_ref:
+            zip_ref.extractall(world_dir)
+
+        # Save the original .mcworld filename for later reporting
+        with open(world_dir / "source_world_name.txt", "w", encoding="utf-8") as f:
+            f.write(filename)
+
+    except Exception as e:
+        return jsonify({'error': f'Failed to unzip: {e}'}), 500
+    finally:
+        temp_path.unlink(missing_ok=True)  # Clean up uploaded zip
+
+    # Find all .lang files inside the extracted world folder
+    lang_files = []
+    for path in world_dir.rglob('*.lang'):
+        size_kb = round(path.stat().st_size / 1024, 2)
+        relative = path.relative_to(LANGUAGE_TOOL_DIR)
+        lang_files.append({'name': str(relative), 'size': size_kb})
+
+    return jsonify({'lang_files': lang_files})
+
+@app.route('/analyze-lang-file', methods=['POST'])
+def analyze_lang_file():
+    data = request.json
+    rel_path = data.get("filename")
+    if not rel_path:
+        return jsonify({"error": "No file provided"}), 400
+
+    path = LANGUAGE_TOOL_DIR / rel_path
+    if not path.exists():
+        return jsonify({"error": "File not found"}), 404
+
+    # Walk up to find the original .mcworld filename
+    current_dir = path.parent
+    world_filename = "(unknown)"
+    while current_dir != LANGUAGE_TOOL_DIR:
+        candidate = current_dir / "source_world_name.txt"
+        if candidate.exists():
+            with open(candidate, "r", encoding="utf-8") as f:
+                world_filename = f.read().strip()
+            break
+        current_dir = current_dir.parent
+
+    # Read the lang file
+    with open(path, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    texts = [line.strip().split("=", 1)[1] for line in lines if "=" in line and not is_just_formatting(line)]
+    joined_text = "\n".join(texts)
+
+    difficult_words_list = textstat.difficult_words_list(joined_text)
+    difficult_word_counts = {word: difficult_words_list.count(word) for word in set(difficult_words_list)}
+
+    analysis = {
+        "Flesch Reading Ease": textstat.flesch_reading_ease(joined_text),
+        "Flesch-Kincaid Grade": textstat.flesch_kincaid_grade(joined_text),
+        "SMOG Index": textstat.smog_index(joined_text),
+        "Dale-Chall Score": textstat.dale_chall_readability_score(joined_text),
+        "Automated Readability Index": textstat.automated_readability_index(joined_text),
+        "Difficult Word Count": len(difficult_words_list),
+        "Line Count": len(texts),
+        "Difficult Words": difficult_word_counts
+    }
+
+    # ── Save .txt report ───────────────────────────────
+    analysis_file = path.parent / f"analysis_{Path(rel_path).stem}.txt"
+    with open(analysis_file, "w", encoding="utf-8") as f:
+        f.write(f"World File: {world_filename}\n")
+        f.write(f"Language File: {Path(rel_path).name}\n")
+        f.write(f"Analysis Timestamp: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write("-" * 50 + "\n\n")
+        for key, value in analysis.items():
+            if isinstance(value, dict):
+                f.write(f"\n{key}:\n")
+                for word, count in sorted(value.items()):
+                    f.write(f"  - {word} ({count})\n")
+            else:
+                f.write(f"{key}: {value}\n")
+
+    # ── Save per-line reading age .json ────────────────
+    line_analysis = []
+    for i, line in enumerate(lines, 1):
+        if "=" in line and not is_just_formatting(line):
+            try:
+                _, value = line.strip().split("=", 1)
+                reading_age = textstat.flesch_kincaid_grade(value)
+            except Exception:
+                value = ""
+                reading_age = None
+            line_analysis.append({
+                "line": i,
+                "text": value.strip(),
+                "reading_age": reading_age
+            })
+
+    json_filename = f"line_analysis_{Path(rel_path).stem}.json"
+    json_path = path.parent / json_filename
+    with open(json_path, "w", encoding="utf-8") as jf:
+        json.dump(line_analysis, jf, indent=2)
+
+    # ── Generate histogram of reading ages ────────────────
+    reading_ages = [entry["reading_age"] for entry in line_analysis if isinstance(entry["reading_age"], (int, float))]
+
+    if reading_ages:
+        plt.figure(figsize=(10, 6))
+        plt.hist(reading_ages, bins=30, color='orange', edgecolor='black')
+        plt.title("Distribution of Reading Age")
+        plt.xlabel("Reading Age")
+        plt.ylabel("Frequency")
+        chart_path = path.parent / f"reading_age_distribution_{Path(rel_path).stem}.png"
+        plt.savefig(chart_path)
+        plt.close()
+
+    # ── Return both download links ─────────────────────
+    relative_txt_url = str(analysis_file.relative_to(LANGUAGE_TOOL_DIR))
+    relative_json_url = str(json_path.relative_to(LANGUAGE_TOOL_DIR))
+    relative_chart_url = str(chart_path.relative_to(LANGUAGE_TOOL_DIR))
+    
+    return jsonify({
+        "file_url": f"/download-analysis/{relative_txt_url}",
+        "json_url": f"/download-analysis/{relative_json_url}",
+        "chart_url": f"/download-analysis/{relative_chart_url}"
+    })
+
+@app.route('/download-analysis/<path:filename>')
+def download_analysis_file(filename):
+    file_path = LANGUAGE_TOOL_DIR / filename
+    if not file_path.exists():
+        return abort(404)
+    return send_from_directory(LANGUAGE_TOOL_DIR, filename, as_attachment=True)
 
 @app.route('/start-server', methods=['POST'])
 def start_server():
@@ -56,6 +238,17 @@ def stop_server():
         return jsonify({'status': 'WebSocket server stopped.'})
     return jsonify({'status': 'Server was not running.'})
 
+@app.route('/clear-json-data', methods=['POST'])
+def clear_json_data():
+    deleted = []
+    for file in DATA_DIR.glob("*.json"):
+        try:
+            file.unlink()
+            deleted.append(file.name)
+        except Exception as e:
+            return jsonify({'status': f'Failed to delete {file.name}: {e}'}), 500
+    return jsonify({'status': f'Deleted {len(deleted)} JSON file(s).'}) 
+
 @app.route('/status')
 def status():
     global websocket_process
@@ -65,7 +258,8 @@ def status():
 @app.route("/list-files", methods=["GET"])
 def list_files():
     files = [f.name for f in DATA_DIR.glob("events_*.json")]
-    return jsonify({"files": files})
+    lang_files = [f.name for f in (DATA_DIR / "languagetooldata").glob("*.lang")]
+    return jsonify({"files": files + lang_files})
 
 @app.route("/download/<path:filename>")
 def download_file(filename):

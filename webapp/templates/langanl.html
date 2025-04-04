@@ -1,14 +1,66 @@
 {% extends "base.html" %}
-{% block title %}Language Analysis - Minecraft Dashboard{% endblock %}
+{% block title %}Language Tool - Minecraft Dashboard{% endblock %}
 {% block content %}
-  <h2>Language Analysis</h2>
-  <p>This page will display metrics about player chat and language usage in Minecraft sessions.</p>
 
-  <!-- Placeholder content for now -->
-  <ul>
-    <li>Average message length</li>
-    <li>Most used words</li>
-    <li>Word frequency histogram</li>
-    <li>Language detection (coming soon)</li>
-  </ul>
+<h2>Analyze a Minecraft World (.mcworld)</h2>
+
+<!-- Upload Section -->
+<input type="file" id="mcworldFile" accept=".mcworld">
+<button onclick="uploadWorld()">Upload & Extract</button>
+
+<h3>Available Language Files</h3>
+<select id="langSelect"></select>
+<button onclick="runLangAnalysis()">Analyze</button>
+
+<!-- Output Section -->
+<h3>Download Analysis</h3>
+<p id="analysisOutput">No file yet.</p>
+
+<script>
+  async function uploadWorld() {
+    const fileInput = document.getElementById("mcworldFile");
+    if (fileInput.files.length === 0) return alert("Select a .mcworld file");
+
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    const res = await fetch("/upload-mcworld", { method: "POST", body: formData });
+    const data = await res.json();
+    if (data.error) return alert(data.error);
+
+    const select = document.getElementById("langSelect");
+    select.innerHTML = "";
+    data.lang_files.forEach(file => {
+      const opt = document.createElement("option");
+      opt.value = file.name;
+      opt.textContent = `${file.name} (${file.size} KB)`;
+      select.appendChild(opt);
+    });
+
+    alert(`${data.lang_files.length} language file(s) found.`);
+  }
+
+  async function runLangAnalysis() {
+    const filename = document.getElementById("langSelect").value;
+    if (!filename) return alert("Select a .lang file");
+
+    const res = await fetch("/analyze-lang-file", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename })
+    });
+
+    const data = await res.json();
+    if (data.error) return alert(data.error);
+
+    const out = document.getElementById("analysisOutput");
+    out.innerHTML = `
+      <a href="${data.file_url}" download>📄 Download summary report (.txt)</a><br>
+      <a href="${data.json_url}" download>📄 Download per-line analysis (.json)</a><br>
+      <a href="${data.chart_url}" download>📊 Download reading age chart (.png)</a><br><br>
+      <img src="${data.chart_url}" alt="Reading Age Distribution" style="max-width: 100%; border: 1px solid #ccc; padding: 5px;">
+`   ;
+  }
+</script>
+
 {% endblock %}
