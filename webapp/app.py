@@ -389,6 +389,39 @@ def connection_info():
     except Exception as e:
         return jsonify({"error": "Unable to fetch connection info", "details": str(e)}), 500
 
+@app.route('/ai_lang_tool')
+def ai_lang_tool():
+    return render_template('ai_lang_tool.html')
+
+@app.route("/run-lang-analysis", methods=["POST"])
+def run_lang_analysis():
+    data = request.json
+    filename = data.get("filename")
+    if not filename:
+        return jsonify({"error": "Filename is required"}), 400
+
+    # Mock fetching file content (replace this with actual logic to fetch the file content)
+    file_content = f"Mocked content of the file: {filename}"
+
+    # Prepare the prompt for Ollama
+    prompt = f"Analyze the following Minecraft language file content and provide insights:\n\n{file_content}"
+
+    try:
+        # Run the Ollama model using subprocess
+        process = subprocess.run(
+            ["ollama", "run", "llama3.2"],
+            input=prompt,
+            text=True,
+            capture_output=True,
+            check=True
+        )
+        # Capture the output from Ollama
+        output = process.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        return jsonify({"error": f"Ollama model error: {e.stderr.strip()}"}), 500
+
+    return jsonify({"output": output})
+
 # ────────────────────────────── RUN ────────────────────────────── #
 
 if __name__ == "__main__":

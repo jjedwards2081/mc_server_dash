@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Language Tool - Minecraft Dashboard{% endblock %}
+{% block content %}
+
+<h2>Analyze a Minecraft World (.mcworld)</h2>
+
+<!-- Upload Section -->
+<input type="file" id="mcworldFile" accept=".mcworld">
+<button onclick="uploadWorld()">Upload & Extract</button>
+
+<h3>Available Language Files</h3>
+<select id="langSelect"></select>
+<button onclick="runLangAnalysis()">Analyze</button>
+
+<!-- Output Section -->
+<h3>Download Analysis</h3>
+<p id="analysisOutput">No file yet.</p>
+
+<script>
+  async function uploadWorld() {
+    const fileInput = document.getElementById("mcworldFile");
+    if (fileInput.files.length === 0) {
+      alert("Select a .mcworld file");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+
+    const res = await fetch("/upload-mcworld", { method: "POST", body: formData });
+    const data = await res.json();
+    if (data.error) {
+      alert(data.error);
+      return;
+    }
+
+    const select = document.getElementById("langSelect");
+    select.innerHTML = "";
+    data.lang_files.forEach(file => {
+      const opt = document.createElement("option");
+      opt.value = file.name;
+      opt.textContent = `${file.name} (${file.size} KB)`;
+      select.appendChild(opt);
+    });
+
+    alert(`${data.lang_files.length} language file(s) found.`);
+  }
+
+  async function runLangAnalysis() {
+    const filename = document.getElementById("langSelect").value;
+    if (!filename) {
+      alert("Select a .lang file");
+      return;
+    }
+
+    // Display a loading message
+    const out = document.getElementById("analysisOutput");
+    out.innerHTML = "Processing... Please wait.";
+    out.style.display = "block";
+
+    try {
+      // Call the Python backend to run the analysis
+      const res = await fetch("/run-lang-analysis", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename })
+      });
+
+      const data = await res.json();
+      if (data.error) {
+        alert(data.error);
+        out.innerHTML = "No file yet.";
+        return;
+      }
+
+      // Display the analysis output
+      out.innerHTML = `
+        <textarea style="width: 100%; height: 300px; border: 1px solid #ccc; padding: 5px;" readonly>
+${data.output}
+        </textarea>
+      `;
+    } catch (error) {
+      console.error("Error during analysis:", error);
+      out.innerHTML = "An error occurred during analysis.";
+    }
+  }
+</script>
+
+{% endblock %}
