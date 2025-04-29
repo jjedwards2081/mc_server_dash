@@ -55,7 +55,7 @@
 
     // Display a loading message
     const out = document.getElementById("analysisOutput");
-    out.innerHTML = "Processing... Please wait.";
+    out.innerHTML = "Processing. This can take time and you should not refresh the page.";
     out.style.display = "block";
 
     try {
@@ -75,14 +75,26 @@
 
       // Display the analysis output
       out.innerHTML = `
-        <textarea style="width: 100%; height: 300px; border: 1px solid #ccc; padding: 5px;" readonly>
+        <textarea id="analysisTextarea" style="width: 100%; height: 500px; border: 1px solid #ccc; padding: 5px;" readonly>
 ${data.output}
         </textarea>
+        <br>
+        <button onclick="downloadAnalysis()">Download</button>
       `;
     } catch (error) {
       console.error("Error during analysis:", error);
       out.innerHTML = "An error occurred during analysis.";
     }
+  }
+
+  function downloadAnalysis() {
+    const textarea = document.getElementById("analysisTextarea");
+    const content = textarea.value;
+    const blob = new Blob([content], { type: "text/plain" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "analysis_output.txt";
+    link.click();
   }
 </script>
 

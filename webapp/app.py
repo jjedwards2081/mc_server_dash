@@ -20,19 +20,24 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.use('Agg')  # Ensure headless rendering
+import hashlib
 
 app = Flask(__name__)
 
 # Globals for process tracking
 websocket_process = None
 
+MAX_TOKENS = 4000  # Safe chunk size (adjust based on your model's capacity)
+PLACEHOLDER_PATTERN = r"\{.*?\}|\%s|\§."
+
 # Directories
 APP_DIR = Path(__file__).resolve().parent
 BASE_DIR = APP_DIR.parent
 DATA_DIR = BASE_DIR / "data"
-SERVER_PATH = BASE_DIR / "websocket_server" / "server.py"
+DATA_DIR.mkdir(exist_ok=True)  # Ensure the parent directory exists
+
 LANGUAGE_TOOL_DIR = DATA_DIR / "languagetooldata"
-LANGUAGE_TOOL_DIR.mkdir(exist_ok=True)
+LANGUAGE_TOOL_DIR.mkdir(exist_ok=True)  # Create the subdirectory
 
 PLACEHOLDER_PATTERN = r"(%\d*\$?[sd]|\\n|\u00a7.)"
 
@@ -397,30 +402,121 @@ def ai_lang_tool():
 def run_lang_analysis():
     data = request.json
     filename = data.get("filename")
+    model = data.get("model", "phi4")  # Allow user to specify model, default to phi4
+
     if not filename:
         return jsonify({"error": "Filename is required"}), 400
 
-    # Mock fetching file content (replace this with actual logic to fetch the file content)
-    file_content = f"Mocked content of the file: {filename}"
-
-    # Prepare the prompt for Ollama
-    prompt = f"Analyze the following Minecraft language file content and provide insights:\n\n{file_content}"
+    file_path = LANGUAGE_TOOL_DIR / filename
+    if not file_path.exists():
+        return jsonify({"error": "File not found"}), 404
 
     try:
-        # Run the Ollama model using subprocess
-        process = subprocess.run(
-            ["ollama", "run", "llama3.2"],
-            input=prompt,
-            text=True,
-            capture_output=True,
-            check=True
-        )
-        # Capture the output from Ollama
-        output = process.stdout.strip()
-    except subprocess.CalledProcessError as e:
-        return jsonify({"error": f"Ollama model error: {e.stderr.strip()}"}), 500
+        with open(file_path, "r", encoding="utf-8") as f:
+            file_content = f.read()
+    except Exception as e:
+        return jsonify({"error": f"Failed to read file: {e}"}), 500
 
-    return jsonify({"output": output})
+    # Extract only dialogue-related text
+    npc_texts = []
+    for line in file_content.splitlines():
+        if "=" in line and not is_just_formatting(line):
+            key, value = line.split("=", 1)
+            key_lower = key.lower()
+            if key_lower.startswith("dialogue.") or key_lower.startswith("npc.") or "dialogue" in key_lower:
+                cleaned_value = re.sub(PLACEHOLDER_PATTERN, "", value).strip()
+                if cleaned_value:
+                    npc_texts.append(cleaned_value)
+
+    # If no NPC text extracted, fallback to analyzing ALL meaningful lines
+    if not npc_texts:
+        for line in file_content.splitlines():
+            if "=" in line and not is_just_formatting(line):
+                _, value = line.split("=", 1)
+                cleaned_value = re.sub(PLACEHOLDER_PATTERN, "", value).strip()
+                if cleaned_value:
+                    npc_texts.append(cleaned_value)
+
+    # If too large, break into chunks
+    npc_chunks = []
+    current_chunk = []
+    current_length = 0
+
+    for text in npc_texts:
+        text_length = len(text.split())
+        if current_length + text_length > MAX_TOKENS:
+            npc_chunks.append("\n".join(current_chunk))
+            current_chunk = [text]
+            current_length = text_length
+        else:
+            current_chunk.append(text)
+            current_length += text_length
+
+    if current_chunk:
+        npc_chunks.append("\n".join(current_chunk))
+
+    final_report = []
+
+    for idx, chunk in enumerate(npc_chunks):
+        prompt = (
+            "You are an expert in education content development.\n"
+            "I will provide a Minecraft Education language file.\n"
+            "Focus ONLY on NPC game text. Ignore placeholders and formatting.\n"
+            "Your tasks are:\n"
+            "States the learning objectives of this game, given the NPC game text.\n"
+            f"Here is the extracted NPC text chunk ({idx+1}/{len(npc_chunks)}):\n\n{chunk}\n\n"
+            "Please write a detailed analysis report."
+        )
+
+        try:
+            process = subprocess.run(
+                ["ollama", "run", model],
+                input=prompt.encode("utf-8"),
+                text=False,
+                capture_output=True,
+                check=True
+            )
+            output = process.stdout.decode("utf-8").strip()
+            final_report.append(output)
+        except subprocess.CalledProcessError as e:
+            return jsonify({"error": f"Ollama model error: {e.stderr.decode('utf-8').strip()}"}), 500
+
+    # Combine all chunk analyses
+    full_output1 = "\n\n".join(final_report)
+    
+    final_report = []
+
+    for idx, chunk in enumerate(npc_chunks):
+        prompt = (
+            "You are an expert in education content development.\n"
+            "I will provide a Minecraft Education language file.\n"
+            "Focus ONLY on NPC game text. Ignore placeholders and formatting.\n"
+            "Your tasks are:\n"
+            "- Highlight grammar and readability issues, with examples.\n\n"
+            f"Here is the extracted NPC text chunk ({idx+1}/{len(npc_chunks)}):\n\n{chunk}\n\n"
+            "Please write a detailed analysis report."
+        )
+
+        try:
+            process = subprocess.run(
+                ["ollama", "run", model],
+                input=prompt.encode("utf-8"),
+                text=False,
+                capture_output=True,
+                check=True
+            )
+            output = process.stdout.decode("utf-8").strip()
+            final_report.append(output)
+        except subprocess.CalledProcessError as e:
+            return jsonify({"error": f"Ollama model error: {e.stderr.decode('utf-8').strip()}"}), 500
+
+            # Combine all chunk analyses
+    
+    full_output2 = "\n\n".join(final_report)
+    
+    full_output = "Part 1:\n\n" + full_output1 + "\n\nPart 2:\n\n" + full_output2
+
+    return jsonify({"output": full_output})
 
 # ────────────────────────────── RUN ────────────────────────────── #
 
