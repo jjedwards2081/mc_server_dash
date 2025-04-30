@@ -59,6 +59,11 @@ def webserver():
 def langanl():
     return render_template('langanl.html')
 
+@app.route('/materials-generator')
+def materials_generator():
+    return render_template('ai_materials_gen.html')
+
+
 @app.route('/upload-lang-file', methods=['POST'])
 def upload_lang_file():
     if 'file' not in request.files:
@@ -281,14 +286,10 @@ def list_files():
     lang_files = [f.name for f in (DATA_DIR / "languagetooldata").glob("*.lang")]
     return jsonify({"files": files + lang_files})
 
-@app.route("/download/<path:filename>")
+@app.route("/download/<path:filename>", methods=['GET'])
 def download_file(filename):
-    file_path = DATA_DIR / filename
-    print(f"Looking for: {file_path}")
-    if not file_path.exists():
-        print("File not found!")
-        return abort(404)
-    return send_from_directory(DATA_DIR, filename, as_attachment=True)
+    directory = LANGUAGE_TOOL_DIR  # Ensure this points to the directory where JSON files are stored
+    return send_from_directory(directory, filename, as_attachment=True)
 
 @app.route("/analyze", methods=["GET"])
 def analyze():
@@ -517,6 +518,56 @@ def run_lang_analysis():
     full_output = "Part 1:\n\n" + full_output1 + "\n\nPart 2:\n\n" + full_output2
 
     return jsonify({"output": full_output})
+
+@app.route('/unpack-and-json', methods=['POST'])
+def unpack_and_json():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'Empty filename'}), 400
+
+    filename = secure_filename(file.filename)
+    world_name = Path(filename).stem
+    world_dir = LANGUAGE_TOOL_DIR / world_name
+    world_dir.mkdir(parents=True, exist_ok=True)
+
+    # Save the uploaded file temporarily
+    temp_path = LANGUAGE_TOOL_DIR / filename
+    file.save(temp_path)
+
+    try:
+        # Unzip the .mcworld into the world-specific folder
+        with zipfile.ZipFile(temp_path, 'r') as zip_ref:
+            zip_ref.extractall(world_dir)
+
+        # Find the largest en_US.lang file
+        lang_files = list(world_dir.rglob('*en_US.lang'))
+        if not lang_files:
+            return jsonify({'error': 'No en_US.lang file found'}), 400
+
+        largest_file = max(lang_files, key=lambda f: f.stat().st_size)
+
+        # Convert the largest en_US.lang file to JSON
+        json_output_path = world_dir / f"{world_name}_en_US.json"
+        with open(largest_file, 'r', encoding='utf-8') as lang_file, open(json_output_path, 'w', encoding='utf-8') as json_file:
+            json_data = {}
+            for line_number, line in enumerate(lang_file, start=1):
+                json_data[line_number] = line.strip()
+            json.dump(json_data, json_file, indent=4)
+
+        # Return the relative path for the JSON file
+        relative_json_path = json_output_path.relative_to(LANGUAGE_TOOL_DIR)
+        return jsonify({
+            'status': 'File processed successfully',
+            'json_file': f"/download/{relative_json_path.as_posix()}",
+            'lang_files': [{'name': f.name, 'size': round(f.stat().st_size / 1024, 2)} for f in lang_files]
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    finally:
+        temp_path.unlink(missing_ok=True)  # Clean up uploaded zip
 
 # ────────────────────────────── RUN ────────────────────────────── #
 

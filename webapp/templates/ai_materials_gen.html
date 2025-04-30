@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% block title %}Educational Materials Generator{% endblock %}
+{% block content %}
+
+<h2>Educational Materials Generator</h2>
+
+<!-- Upload Section -->
+<input type="file" id="mcworldFile" accept=".mcworld">
+<button onclick="uploadWorld()">Upload & Process</button>
+
+<!-- Output Section -->
+<h3>Processed Files</h3>
+<p id="unpackOutput">No file uploaded yet.</p>
+
+<!-- Target Age Selector -->
+<h3>Target Age</h3>
+<label for="targetAge">Select Target Age:</label>
+<select id="targetAge">
+    {% for age in range(8, 18) %}
+        <option value="{{ age }}">{{ age }}</option>
+    {% endfor %}
+</select>
+
+<script>
+  async function uploadWorld() {
+    const fileInput = document.getElementById("mcworldFile");
+    const targetAge = document.getElementById("targetAge").value;
+
+    if (fileInput.files.length === 0) {
+      alert("Please select a .mcworld file.");
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append("file", fileInput.files[0]);
+    formData.append("targetAge", targetAge); // Add target age to the form data
+
+    try {
+      const res = await fetch("/unpack-and-json", { method: "POST", body: formData });
+      const data = await res.json();
+
+      if (data.error) {
+        alert(data.error);
+        return;
+      }
+
+      // Automatically extract text after the first JSON is created
+      const extractedData = await extractText(data.json_file);
+
+      const output = document.getElementById("unpackOutput");
+      output.innerHTML = `
+        <h4>Generated JSON File:</h4>
+        <button onclick="downloadJSON('${data.json_file}')">Download JSON</button>
+        <h4>Extracted Text JSON File:</h4>
+        <button onclick="downloadExtractedJSON()">Download Extracted JSON</button>
+        <h4>Unpacked Language Files:</h4>
+        <ul>
+          ${data.lang_files.map(file => `<li>${file.name} (${file.size} KB)</li>`).join("")}
+        </ul>
+      `;
+
+      // Save the extracted data for download
+      const blob = new Blob([JSON.stringify(extractedData, null, 2)], { type: "application/json" });
+      window.extractedBlobUrl = URL.createObjectURL(blob);
+      window.extractedJsonFileName = "extracted_text.json";
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      alert("An error occurred while uploading the file.");
+    }
+  }
+
+  function downloadJSON(jsonFilePath) {
+    const link = document.createElement("a");
+    link.href = jsonFilePath; // Use the correct URL returned by the server
+    link.download = jsonFilePath.split('/').pop(); // Extract the filename
+    link.click();
+  }
+
+  async function extractText(jsonFilePath) {
+    try {
+      const res = await fetch(jsonFilePath);
+      const data = await res.json();
+
+      // Extract plain text information
+      const extractedData = {};
+      for (const [lineNumber, text] of Object.entries(data)) {
+        if (text && isPlainText(text)) {
+          // Remove everything before the '=' sign and the '=' sign itself
+          const processedText = text.includes("=") ? text.split("=").slice(1).join("=").trim() : text.trim();
+          extractedData[lineNumber] = processedText;
+        }
+      }
+
+      return extractedData;
+    } catch (error) {
+      console.error("Error extracting text:", error);
+      alert("An error occurred while extracting text.");
+      return {};
+    }
+  }
+
+  function isPlainText(text) {
+    // Filter out formatting and instruction text
+    const formattingPatterns = [
+      /^\s*$/, // Empty or whitespace-only lines
+      /^\[.*?\]$/, // Lines enclosed in square brackets (e.g., [INFO])
+      /^\{.*?\}$/, // Lines enclosed in curly braces (e.g., {command})
+      /^%.*?$/, // Lines starting with a percentage symbol (e.g., %placeholder)
+      /\\n/, // Lines containing newline escape sequences
+      /^\s*\u00a7./ // Lines starting with Minecraft formatting codes (§)
+    ];
+
+    return (
+      typeof text === "string" &&
+      text.trim().length > 0 &&
+      !formattingPatterns.some((pattern) => pattern.test(text))
+    );
+  }
+
+  function downloadExtractedJSON() {
+    const link = document.createElement("a");
+    link.href = window.extractedBlobUrl;
+    link.download = window.extractedJsonFileName;
+    link.click();
+  }
+</script>
+
+{% endblock %}
